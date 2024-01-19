@@ -1,2 +1,2 @@
-# lazy-fusion-flocking
-I AM lazy
+# lazy-message-listener-flocking
+I AM lazy; are you?

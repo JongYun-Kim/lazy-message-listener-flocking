@@ -1,6 +1,6 @@
-# This is this
+# It is what it is...
 import gym
-from gym.spaces import Box, Discrete, Dict, Tuple
+from gym.spaces import Box, Discrete, Dict #, Tuple
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -18,6 +18,7 @@ matplotlib.use('TkAgg')  # To avoid the MacOS backend; but just follow your need
 # Compatibility layer for np.bool_ and np.bool
 if not hasattr(np, 'bool_'):
     np.bool_ = np.bool
+
 
 class LazyMsgListenersEnv(gym.Env):
     # TODO (1): Check padding in neighbor_masks creation
@@ -47,8 +48,8 @@ class LazyMsgListenersEnv(gym.Env):
         # # continuous_vector: action is a continuous vector(s) of shape (num_agents_max, num_agents_max)
         self.action_type = self.config["action_type"] if "action_type" in self.config else "binary_vector"
         # num_agents_pool: pool of possible num_agents;
-        # # type: tuple for range
-        # # type: ndarray or python list of integers for a list pool of num_agents
+        # # type: <tuple> for range
+        # # type: <ndarray> or python <list> of integers for a manual list pool of num_agents
         # # note: self.num_agents_pool is transformed to an ndarray in _validate_config()
         # # NO DEFAULT HERE; MUST BE SPECIFIED
         self.num_agents_pool = self.config["num_agents_pool"]
@@ -60,10 +61,10 @@ class LazyMsgListenersEnv(gym.Env):
         else:
             self.control_config = self.get_default_control_config()
         self.dt = self.control_config["dt"] if "dt" in self.control_config else 0.1  # time step size
-        # comm_range: communication range in meters
-        self.comm_range = self.control_config["comm_range"] if "comm_range" in self.control_config else None
+        # comm_range: communication range in meters; None means FULLY CONNECTED !!
+        self.comm_range = self.config["comm_range"] if "comm_range" in self.config else None
         # termination conditions (max_time_step, std_p_goal, std_v_goal, std_p_rate_goat, std_v_rate_goal)
-        self.max_time_step = self.config["max_time_step"] if "max_time_step" in self.config else 1000
+        self.max_time_steps = self.config["max_time_steps"] if "max_time_steps" in self.config else 1000
         self.std_p_goal = self.control_config["std_p_goal"] if "std_p_goal" in self.control_config else 0.7 * self.control_config["predefined_distance"]
         self.std_v_goal = self.control_config["std_v_goal"] if "std_v_goal" in self.control_config else 0.1
         self.std_p_rate_goal = self.control_config["std_p_rate_goal"] if "std_p_rate_goal" in self.control_config else 0.1
@@ -82,21 +83,25 @@ class LazyMsgListenersEnv(gym.Env):
 
         # # States
         # # # state: dict := {"agent_states":   ndarray,  # shape (num_agents_max, data_dim); absolute states!!
+        #                                        [x, y, vx, vy, theta]; absolute states!!
         #                     "neighbor_masks": ndarray,  # shape (num_agents_max, num_agents_max)
+        #                                        1 if neighbor, 0 if not;  self loop is 0
         #                     "padding_mask":   ndarray,  # shape (num_agents_max)
-        # # # # agent_states: [x, y, vx, vy, theta, (u)]; absolute states!!
-        # # # # neighbor_masks: 1 if neighbor, 0 if not;  self loop is 0
-        # # # # padding_mask:   1 if agent,    0 if padding
+        #                                        1 if agent,    0 if padding
         self.state = None
-        # # # rel_state: dict := {"rel_agent_positions": ndarray,  # shape (num_agents_max, num_agents_max, 2)
+        # # # rel_state: dict := {"rel_agent_positions": ndarray,   # shape (num_agents_max, num_agents_max, 2)
         #                         "rel_agent_velocities": ndarray,  # shape (num_agents_max, num_agents_max, 2)
-        #                         "rel_agent_headings": ndarray,  # shape (num_agents_max, num_agents_max)  # 2-D !!!
-        #                         "rel_agent_dists": ndarray  # shape (num_agents_max, num_agents_max)
+        #                         "rel_agent_headings": ndarray,    # shape (num_agents_max, num_agents_max)  # 2-D !!!
+        #                         "rel_agent_dists": ndarray        # shape (num_agents_max, num_agents_max)
         #                         }
         #  }
         self.rel_state = None
-        self.state_hist = None
+        self.initial_state = None
+        self.agent_states_hist = None
+        self.neighbor_masks_hist = None
+        # self.padding_mask_hist = None
         self.action_hist = None
+        self.has_lost_comm = None
         # # Standard deviations
         self.std_pos_hist = None
         self.std_vel_hist = None
@@ -181,8 +186,8 @@ class LazyMsgListenersEnv(gym.Env):
         self.num_agents_max = self.num_agents_pool.max()
 
         # max_time_step: must be an int and > 0
-        assert isinstance(self.max_time_step, int), "max_time_step must be an int"
-        assert self.max_time_step > 0, "max_time_step must be > 0"
+        assert isinstance(self.max_time_steps, int), "max_time_step must be an int"
+        assert self.max_time_steps > 0, "max_time_step must be > 0"
 
         # variable: condition
 
@@ -197,13 +202,13 @@ class LazyMsgListenersEnv(gym.Env):
         default_control_config = {
             "speed": 15,  # Speed in m/s. Default is 15
             "predefined_distance": 60,  # Predefined distance in meters. Default is 60
-            "communication_decay_rate": 1 / 3,  # Communication decay rate. Default is 1/3
+            "communication_decay_rate": 1/3,  # Communication decay rate. Default is 1/3
             "cost_weight": 1,  # Cost weight. Default is 1
             "inter_agent_strength": 5,  # Inter agent strength. Default is 5
             "bonding_strength": 1,  # Bonding strength. Default is 1
             "k1": 1,  # K1 coefficient. Default is 1
             "k2": 3,  # K2 coefficient. Default is 3
-            "max_turn_rate": 8 / 15,  # Maximum turn rate in rad/s. Default is 8/15
+            "max_turn_rate": 8/15,  # Maximum turn rate in rad/s. Default is 8/15
             "initial_position_bound": 250,  # Initial position bound in meters. Default is 250
         }
         if control_config is not None:
@@ -221,11 +226,12 @@ class LazyMsgListenersEnv(gym.Env):
         # self.agent_time_step = np.zeros(self.num_agents_max, dtype=np.int32)
 
         # Get initial num_agents
-        self.num_agents = np.random.choice(self.num_agents_pool)  # randomly choose the num_agents
+        self.num_agents = np.random.choice(self.num_agents_pool)      # randomly choose the num_agents
         padding_mask = np.zeros(self.num_agents_max, dtype=np.bool_)  # (num_agents_max, )
-        padding_mask[:self.num_agents] = True  # (num_agents_max, )
+        padding_mask[:self.num_agents] = True
 
-        # Init the state
+        # Init the state: agent_states [x,y,vx,vy,theta], neighbor_masks[T/F (n,n)], padding_mask[T/F (n)]
+        # # Generate initial agent states
         p = np.zeros((self.num_agents_max, 2), dtype=np.float64)  # (num_agents_max, 2)
         l2 = self.control_config["initial_position_bound"]/2
         p[:self.num_agents, :] = np.random.uniform(-l2, l2, size=(self.num_agents, 2))
@@ -233,14 +239,15 @@ class LazyMsgListenersEnv(gym.Env):
         th[:self.num_agents] = np.random.uniform(-np.pi, np.pi, size=(self.num_agents,))
         v = self.control_config["speed"] * np.stack([np.cos(th), np.sin(th)], axis=1)
         v[self.num_agents:] = 0
-        # concatenate p v th
+        # # Concatenate p v th
         agent_states = np.concatenate([p, v, th[:, np.newaxis]], axis=1)  # (num_agents_max, 5)
         if self.comm_range is None:
             neighbor_masks = np.ones((self.num_agents_max, self.num_agents_max), dtype=np.bool_)
         else:
             neighbor_masks = self.compute_neighbor_agents(
-                agent_states=agent_states, padding_mask=padding_mask, communication_range=self.comm_range)
+                agent_states=agent_states, padding_mask=padding_mask, communication_range=self.comm_range)[0]
         self.state = {"agent_states": agent_states, "neighbor_masks": neighbor_masks, "padding_mask": padding_mask}
+        self.has_lost_comm = False
 
         # Get relative state
         self.rel_state = self.get_relative_state(state=self.state)
@@ -249,14 +256,15 @@ class LazyMsgListenersEnv(gym.Env):
         obs = self.get_obs(state=self.state, rel_state=self.rel_state, control_inputs=np.zeros(self.num_agents_max))
 
         # Std
-        self.std_pos_hist = np.zeros(self.max_time_step)
-        self.std_vel_hist = np.zeros(self.max_time_step)
+        self.std_pos_hist = np.zeros(self.max_time_steps)
+        self.std_vel_hist = np.zeros(self.max_time_steps)
 
         if self.get_state_hist:
-            self.state_hist = np.zeros((self.max_time_step, self.num_agents_max, 5))
-            self.state_hist[0] = self.state["agent_states"]
+            self.agent_states_hist = np.zeros((self.max_time_steps, self.num_agents_max, 5))
+            self.neighbor_masks_hist = np.zeros((self.max_time_steps, self.num_agents_max, self.num_agents_max))
+            self.initial_state = self.state
         if self.get_action_hist:
-            self.action_hist = np.zeros((self.max_time_step, self.num_agents_max, self.num_agents_max), dtype=np.bool_)
+            self.action_hist = np.zeros((self.max_time_steps, self.num_agents_max, self.num_agents_max), dtype=np.bool_)
 
         return obs
 
@@ -272,12 +280,13 @@ class LazyMsgListenersEnv(gym.Env):
         # Interpret the action (i.e. model output)
         action_interpreted = self.interpret_action(model_output=action)  # TODO: consider radius action type, *L8R*
         joint_action = self.multi_to_single(action_interpreted) if self.env_mode == "multi_env" else action_interpreted
+        joint_action = self.to_binary_action(joint_action)  # (num_agents_max, num_agents_max)
         self.validate_action(action=joint_action,
-                             neighbor_mask=state["neighbor_masks"], padding_mask=state["padding_mask"])
+                             neighbor_masks=state["neighbor_masks"], padding_mask=state["padding_mask"])
 
         # Step the environment in *single agent* setting!, which may be faster due to vectorization-like things
         # # s` = T(s, a)
-        next_state, control_inputs = self.env_transition(state=state, rel_state=rel_state, action=joint_action)
+        next_state, control_inputs, comm_loss_agents = self.env_transition(state, rel_state, joint_action)
         next_rel_state = self.get_relative_state(state=next_state)
         # # r = R(s, a, s`)
         rewards = self._compute_rewards(
@@ -286,7 +295,7 @@ class LazyMsgListenersEnv(gym.Env):
         obs = self.get_obs(state=next_state, rel_state=next_rel_state, control_inputs=control_inputs)
 
         # Check episode termination
-        done = self.check_episode_termination(state=next_state, rel_state=next_rel_state)
+        done = self.check_episode_termination(state=next_state, rel_state=next_rel_state, comm_loss_agents=comm_loss_agents)
 
         # Get custom reward if implemented
         custom_reward = self.compute_custom_reward(state, rel_state, control_inputs, rewards, done)
@@ -298,6 +307,7 @@ class LazyMsgListenersEnv(gym.Env):
             "std_pos": self.std_pos_hist[self.time_step],
             "std_vel": self.std_vel_hist[self.time_step],
             "original_rewards": _reward,
+            "comm_loss_agents": comm_loss_agents,
         }
         info = self.get_extra_info(info, next_state, next_rel_state, control_inputs, rewards, done)
         self.collect_state_and_action_hist(next_state, joint_action)
@@ -333,12 +343,11 @@ class LazyMsgListenersEnv(gym.Env):
             data=agent_headings, mask=padding_mask, get_dist=True, get_active_only=False)
 
         # rel_state: dict
-        rel_state = \
-            {"rel_agent_positions": rel_agent_positions,
-             "rel_agent_velocities": rel_agent_velocities,
-             "rel_agent_headings": rel_agent_headings,
-             "rel_agent_dists": rel_agent_dists
-            }
+        rel_state = {"rel_agent_positions": rel_agent_positions,
+                     "rel_agent_velocities": rel_agent_velocities,
+                     "rel_agent_headings": rel_agent_headings,
+                     "rel_agent_dists": rel_agent_dists
+                     }
 
         return rel_state
 
@@ -352,11 +361,11 @@ class LazyMsgListenersEnv(gym.Env):
         # TODO: do we need to check the shape and range of the model_output?
         return model_output
 
-    def validate_action(self, action, neighbor_mask, padding_mask):
+    def validate_action(self, action, neighbor_masks, padding_mask):
         """
         Validates the action by checking the neighbor_mask and padding_mask
         :param action:  (num_agents_max, num_agents_max)
-        :param neighbor_mask: (num_agents_max, num_agents_max)
+        :param neighbor_masks: (num_agents_max, num_agents_max)
         :param padding_mask: (num_agents_max)
         :return: None
         """
@@ -365,28 +374,38 @@ class LazyMsgListenersEnv(gym.Env):
         assert action.shape == (self.num_agents_max, self.num_agents_max), \
             "action must be a boolean ndarray of shape (num_agents_max, num_agents_max)"
 
-        # Check action value based on the neighbor_mask and padding_mask TODO: check if this is correct
-        # # action[i, j] == 1 must not found if neighbor_mask[i, j] == 0
-        # # action[i, j] == 1 must not found if padding_mask[j] == 0
-        assert np.all(np.logical_or(neighbor_mask, ~action)), \
-            "action[i, j] == 1 must not found if neighbor_mask[i, j] == 0"
-        assert np.all(np.logical_or(padding_mask, ~action)), \
-            "action[i, j] == 1 must not found if padding_mask[j] == 0"
+        # Check action value based on the neighbor_mask and padding_mask
+        assert np.all((neighbor_masks | ~action)), "action[i, j] == 1 must not found if neighbor_mask[i, j] == 0"
+        assert np.all((padding_mask[:, None] | ~action)), "action[i, j] == 1 must not found if padding_mask[j] == 0"
 
         # Ensure the diagonal elements are all zeros (no self-loops)
         assert np.all(np.diag(action) == 0), "Diagonal elements must be zero (no self-loops)"
 
         # Efficiently check for rows with all zeros (excluding self-loops)
-        action_no_diagonals = action.copy()
-        np.fill_diagonal(action_no_diagonals, 0)
-        assert np.all(action_no_diagonals.sum(axis=1) > 0), \
+        assert np.all(action.sum(axis=1) - np.diag(action) > 0), \
             "Each row in action, except self-loops, must have at least one True value"
 
     def to_binary_action(self, action_in_another_type):
+        if self.action_type == "binary_vector":
+            return action_in_another_type
+        elif self.action_type == "radius":
+            # action_in_another_type: ndarray of shape (num_agents_max, )
+            # # action_in_another_type[i] is the radius of the communication range of agent i
 
-        # if self.action_type == "radius":
+            # Check if the radius is positive and less than the communication range (non-padded agents only)
+            assert np.all(action_in_another_type[self.state["padding_mask"]] > 0), \
+                "action_in_another_type[i] must be > 0 for all non-padded agents"
+            assert np.all(action_in_another_type[self.state["padding_mask"]] <= 1), \
+                "action_in_another_type[i] must be <= self.comm_range for all non-padded agents"
 
-        pass
+            # Set the action
+            agent_wise_comm_range = self.comm_range * action_in_another_type[self.state["padding_mask"], np.newaxis]  # (num_agents, 1)
+            action_in_binary = self.compute_neighbor_agents(
+                agent_states=self.state["agent_states"], padding_mask=self.state["padding_mask"],
+                communication_range=agent_wise_comm_range)[0]  # TODO: Check loss of communication
+            return action_in_binary  # (num_agents_max, num_agents_max)
+        elif self.action_type == "continuous_vector":
+            raise NotImplementedError("continuous_vector action_type is not implemented yet")
 
     def multi_to_single(self, variable_in_multi: MultiAgentDict):
         """
@@ -424,10 +443,10 @@ class LazyMsgListenersEnv(gym.Env):
         :param state: dict:
         :param rel_state: dict:
         :param action: ndarray of shape (num_agents_max, num_agents_max)
-        :return: next_state: dict; control_inputs: ndarray of shape (num_agents_max, )
+        :return: next_state: dict; control_inputs: (num_agents_max, )
         """
         # Validate the laziness_vectors  TODO: Remove this line once it runs, as it was already checked
-        self.validate_action(action=action, neighbor_mask=state["neighbor_masks"], padding_mask=state["padding_mask"])
+        # self.validate_action(action=action, neighbor_masks=state["neighbor_masks"], padding_mask=state["padding_mask"])
 
         # 0. Apply lazy message actions: alters the neighbor_masks!
         lazy_listening_msg_masks = np.logical_and(state["neighbor_masks"], action)  # (num_agents_max, num_agents_max)
@@ -441,8 +460,9 @@ class LazyMsgListenersEnv(gym.Env):
         # 3. Update network topology (i.e. neighbor_masks) based on the new agent states
         if self.comm_range is None:
             next_neighbor_masks = state["neighbor_masks"]
+            comm_loss_agents = None
         else:
-            next_neighbor_masks = self.compute_neighbor_agents(
+            next_neighbor_masks, comm_loss_agents = self.compute_neighbor_agents(
                 agent_states=next_agent_states, padding_mask=state["padding_mask"], communication_range=self.comm_range)
 
         # 4. Update the active agents (i.e. padding_mask); you may lose or gain agents
@@ -456,7 +476,7 @@ class LazyMsgListenersEnv(gym.Env):
                       "padding_mask": state["padding_mask"]
                       }
 
-        return next_state, control_inputs
+        return next_state, control_inputs, comm_loss_agents
 
     def get_control_inputs(self, state, rel_state, new_network):
         """
@@ -576,10 +596,6 @@ class LazyMsgListenersEnv(gym.Env):
         # 4. Concatenate
         next_agent_states = np.concatenate(  # (num_agents_max, 5)
             [next_agent_positions, next_agent_velocities, next_agent_headings[:, np.newaxis]], axis=1)
-        # next_agent_states = np.zeros((self.num_agents_max, 5), dtype=np.float32)  # (num_agents_max, 5)
-        # next_agent_states[:, :2] = next_agent_positions
-        # next_agent_states[:, 2:4] = next_agent_velocities
-        # next_agent_states[:, 4] = next_agent_headings
 
         return next_agent_states
 
@@ -590,12 +606,16 @@ class LazyMsgListenersEnv(gym.Env):
             data=agent_positions, mask=padding_mask, get_dist=True, get_active_only=True)
         # Get active neighbor masks
         active_neighbor_masks = rel_dist <= communication_range  # (num_agents, num_agents)
+        np.fill_diagonal(active_neighbor_masks, 0)  # REMOVE self-loops; by the definition of neighbor_masks
         # Get the next neighbor masks
         next_neighbor_masks = np.zeros((self.num_agents_max, self.num_agents_max), dtype=np.bool_)  # (num_agents_max, num_agents_max)
         active_agents_indices = np.nonzero(padding_mask)[0]  # (num_agents, )
         next_neighbor_masks[np.ix_(active_agents_indices, active_agents_indices)] = active_neighbor_masks
 
-        return next_neighbor_masks
+        # Get no neighbor agents (be careful neighbor mask does not include self-loops)
+        comm_loss_agents = np.logical_and(padding_mask, ~next_neighbor_masks.sum(axis=1).astype(np.bool_))
+
+        return next_neighbor_masks, comm_loss_agents  # (num_agents_max, num_agents_max), (num_agents_max)
 
     def get_relative_info(self, data, mask, get_dist=False, get_active_only=False):
         """
@@ -650,18 +670,15 @@ class LazyMsgListenersEnv(gym.Env):
         :param control_inputs: (num_agents_max)
         :return: rewards: (num_agents_max)
         """
-        w = self.control_config["cost_weight"]
+        rho = self.control_config["cost_weight"]
 
         # Heading rate control cost
         heading_rate_costs = (self.dt * self.control_config["speed"]) * np.abs(control_inputs)  # (num_agents_max, )
         # Cruising cost (time penalty)
-        cruising_costs = self.dt * np.ones(self.num_agents_max, dtype=np.float32)
-        cruising_costs[~state["padding_mask"]] = 0  # (num_agents_max, )
+        cruising_costs = self.dt * np.ones(self.num_agents_max, dtype=np.float32)  # (num_agents_max, )
 
-        rewards = - (heading_rate_costs + (w * cruising_costs))  # (num_agents_max, )
-
-        # TODO: Remove this:
-        assert np.all(rewards[~state["padding_mask"]] == 0), "rewards of inactive agents must be zero"
+        rewards = - (heading_rate_costs + (rho * cruising_costs))  # (num_agents_max, )
+        rewards[~state["padding_mask"]] = 0
 
         return rewards  # (num_agents_max, )
 
@@ -722,6 +739,9 @@ class LazyMsgListenersEnv(gym.Env):
         agent_observations[:, 4] /= u_max
 
         # Construct observation
+        post_processed_obs = self.post_process_obs(agent_observations, neighbor_masks, padding_mask)
+        if post_processed_obs is not NotImplemented:
+            return post_processed_obs
         if self.env_mode == "single_env":
             obs = {"centralized_agents_info": agent_observations,  # (num_agents_max, 5)
                    "neighbor_masks": neighbor_masks,              # (num_agents_max, num_agents_max)
@@ -740,7 +760,13 @@ class LazyMsgListenersEnv(gym.Env):
         else:
             raise ValueError(f"self.env_mode: 'single_env' or 'multi_env'; not {self.env_mode}; this is get_obs()")
 
-    def check_episode_termination(self, state, rel_state):
+    def post_process_obs(self, agent_observations, neighbor_masks, padding_mask):
+        """
+        Implement your logic; e.g. flatten the obs for MLP if the MLP doesn't use action masks or so...
+        """
+        return NotImplemented
+
+    def check_episode_termination(self, state, rel_state, comm_loss_agents):
         """
         Check if the episode is terminated:
             (1) *position std*: sqrt(V(x)+V(y)) < std_p_converged
@@ -749,7 +775,8 @@ class LazyMsgListenersEnv(gym.Env):
                 in the last 50 iterations
             (4) *vel std rate*: max of (sqrt(V(vx)+V(vy))) - min of (sqrt(V(vx)+V(vy))) < std_v_rate_converged
                 in the last 50 iterations
-            (6) *max_time_step*: time_step > max_time_step
+            (5) *max_time_step*: time_step > max_time_step
+            (6) *communication*: any agent loses communication with all other agents -> done==True
         :return: done
         """
         padding_mask = state["padding_mask"]
@@ -764,8 +791,8 @@ class LazyMsgListenersEnv(gym.Env):
         self.std_vel_hist[self.time_step] = vel_std
 
         # Check (1) and (2)
-        is_pos_std_converged = pos_std < self.std_p_goal
-        is_vel_std_converged = vel_std < self.std_v_goal
+        is_pos_std_converged = pos_std < self.std_p_goal  # (1)
+        is_vel_std_converged = vel_std < self.std_v_goal  # (2)
         are_stds_converged = is_pos_std_converged and is_vel_std_converged
 
         if are_stds_converged and not self.use_fixed_episode_length:
@@ -781,8 +808,14 @@ class LazyMsgListenersEnv(gym.Env):
                     min_vel_std = np.min(last_n_vel_stds)
                     done = max_vel_std - min_vel_std < self.std_v_rate_goal
         # Check (5)
-        if self.time_step >= self.max_time_step-1:
+        if self.time_step >= self.max_time_steps-1:
             done = True
+
+        # Check (6)
+        if self.comm_range is not None:
+            if comm_loss_agents.any():
+                done = True
+                self.has_lost_comm = True
 
         if self.env_mode == "single_env":
             return done
@@ -807,13 +840,14 @@ class LazyMsgListenersEnv(gym.Env):
         :return: None
         """
         if self.get_state_hist:
-            self.state_hist[self.time_step] = state["agent_states"]
+            self.agent_states_hist[self.time_step] = state["agent_states"]
+            self.neighbor_masks_hist[self.time_step] = state["neighbor_masks"]
         if self.get_action_hist:
             self.action_hist[self.time_step] = action
 
     def compute_custom_reward(self, state, rel_state, control_inputs, rewards, done):
         """
-        Compute the custom reward
+        Impelment your custom reward logic
         :return: custom_reward
         """
         return NotImplemented

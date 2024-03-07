@@ -22,9 +22,6 @@ if not hasattr(np, 'bool_'):
 
 
 class LazyMsgListenersEnv(gym.Env):
-    # TODO (1): Check padding in neighbor_masks creation
-    # TODO (2): Take comments out if unnecessary, which might be most of them tho...
-    # TODO (3): SEED control !!!
     """
     *Lazy Message-Listeners Environment*
     - Description: augmented C-S flocking control runs based on action from the model
@@ -455,6 +452,9 @@ class LazyMsgListenersEnv(gym.Env):
         :return: None
         """
         # Check the dtype and shape of the action
+        if self.action_type == "binary_vector":  # TODO 땜빵
+            if action.dtype == np.int64:
+                self.action_dtype = np.int64
         assert action.dtype == self.action_dtype, "action must be a(an) {} ndarray".format(self.action_dtype)
         assert action.shape == (self.num_agents_max, self.num_agents_max), \
             "action must be a boolean ndarray of shape (num_agents_max, num_agents_max)"
@@ -535,7 +535,7 @@ class LazyMsgListenersEnv(gym.Env):
         :param action: ndarray of shape (num_agents_max, num_agents_max)
         :return: next_state: dict; control_inputs: (num_agents_max, )
         """
-        # Validate the laziness_vectors  TODO: Remove this line once it runs, as it was already checked
+        # Validate the laziness_vectors
         # self.validate_action(action=action, neighbor_masks=state["neighbor_masks"], padding_mask=state["padding_mask"])
 
         # 0. Apply lazy message actions: alters the neighbor_masks!
@@ -594,9 +594,6 @@ class LazyMsgListenersEnv(gym.Env):
         th_i = abs_ang[padding_mask]  # (num_agents, )
         net = neighbor_masks[active_agents_indices_2d]  # (num_agents, num_agents) may be no self-loops (i.e. 0 on diag)
         N = (net + (np.eye(self.num_agents) * np.finfo(float).eps)).sum(axis=1)  # (num_agents, )
-
-        if self.time_step != 0:
-            assert np.all(N > 0), "N must be > 0 for all agents"  # TODO: remove this upon the test
 
         # Get control config
         beta = self.control_config["communication_decay_rate"]
@@ -690,13 +687,11 @@ class LazyMsgListenersEnv(gym.Env):
 
         return next_agent_states  # This did not update the neighbor_masks; it is done in the env_transition
 
-    # def compute_neighbor_agents(self, agent_states, padding_mask, communication_range, includes_self_loops=False):
-    # TODO: Clean all the comments and lines up according to the decision on the self-loops
     def compute_neighbor_agents(self, agent_states, padding_mask, communication_range, includes_self_loops=True):
         """
         1. Computes the neighbor matrix based on communication range
         2. Excludes the padding agents (i.e. mask_value==0)
-        3. (By default) Excludes the self-loops
+        3. (By default) Includes the self-loops
         """
         self_loop = includes_self_loops  # True if includes self-loops; False otherwise
         agent_positions = agent_states[:, :2]  # (num_agents_max, 2)
@@ -712,7 +707,7 @@ class LazyMsgListenersEnv(gym.Env):
         active_agents_indices = np.nonzero(padding_mask)[0]  # (num_agents, )
         next_neighbor_masks[np.ix_(active_agents_indices, active_agents_indices)] = active_neighbor_masks
 
-        # Get no neighbor agents (be careful neighbor mask may not include self-loops)
+        # Check no neighbor agents (be careful neighbor mask may not include self-loops)
         neighbor_sum = next_neighbor_masks.sum(axis=1)  # (num_agents_max, )
         if includes_self_loops:
             neighbor_sum -= 1  # Subtract 1 for self-loop

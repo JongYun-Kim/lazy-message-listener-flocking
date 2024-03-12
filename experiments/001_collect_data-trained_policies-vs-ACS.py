@@ -29,7 +29,7 @@ if __name__ == "__main__":
     policy.model.eval()
 
     # Experiment settings
-    start_seed = 10
+    start_seed = 20
     num_seeds = 10
     num_algos = 3
     num_agents = 20
@@ -125,3 +125,4 @@ if __name__ == "__main__":
     elapsed_time = time.gmtime(elapsed_time)
     print(f"Elapsed time: {elapsed_time.tm_mday-1} days, {elapsed_time.tm_hour} hours, {elapsed_time.tm_min} minutes, "
           f"{elapsed_time.tm_sec} seconds")
+

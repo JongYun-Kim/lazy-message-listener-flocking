@@ -62,7 +62,7 @@ if __name__ == "__main__":
             # "batch_mode": "complete_episodes",
             # "batch_mode": "truncate_episodes",
             "lr": 2e-5,
-            "lr_schedule": [[0, 3e-5],
+            "lr_schedule": [[0, 2e-5],
                             [1e7, 1e-7],
                             ],
             # add more hyperparameters here as needed

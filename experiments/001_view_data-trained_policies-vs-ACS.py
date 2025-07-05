@@ -16,9 +16,9 @@ def get_save_path_and_file_name(date_str: str, start_seed: int, last_seed: int):
     dir_path = os.path.join(base_path, date_str + "/")
     #
     seed_range_str = f"seed_{start_seed}-{last_seed}_"
-    plk_name = "001_acs_vs_rl_" + seed_range_str + date_str + ".pkl"
+    pkl_name = "001_acs_vs_rl_" + seed_range_str + date_str + ".pkl"
 
-    return dir_path, plk_name
+    return dir_path, pkl_name
 
 
 if __name__ == "__main__":
@@ -39,8 +39,8 @@ if __name__ == "__main__":
     """
     # Get path
     # folder_path, file_name = get_save_path_and_file_name("2024-03-12_14-13-31", 0, 9)
-    folder_path, file_name = get_save_path_and_file_name("2024-03-12_16-35-04", 10, 19)
-
+    # folder_path, file_name = get_save_path_and_file_name("2024-03-12_16-35-04", 10, 19)
+    folder_path, file_name = get_save_path_and_file_name("2024-03-13_13-48-07", 20, 119)
 
     # Load and check
     with open(os.path.join(folder_path, file_name), "rb") as f:

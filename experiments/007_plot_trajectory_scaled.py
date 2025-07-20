@@ -78,9 +78,9 @@ if __name__ == "__main__":
         x_min, x_max = min(all_x_coords), max(all_x_coords)
         y_min, y_max = min(all_y_coords), max(all_y_coords)
 
-        # Add padding (10% of the range)
-        x_padding = (x_max - x_min) * 0.1
-        y_padding = (y_max - y_min) * 0.1
+        # Add padding (2% of the range)
+        x_padding = (x_max - x_min) * 0.02
+        y_padding = (y_max - y_min) * 0.02
 
         x_min -= x_padding
         x_max += x_padding
@@ -117,12 +117,17 @@ if __name__ == "__main__":
             axes[i].tick_params(axis='both', which='major', labelsize=16)
             axes[i].grid(True, alpha=0.3)
 
-        # Add colorbar
-        cb = fig.colorbar(line, orientation='horizontal', ax=axes)
+        # First apply tight_layout, then adjust for colorbar
+        plt.tight_layout()
+
+        # Make space for colorbar at the bottom
+        plt.subplots_adjust(bottom=0.2, wspace=0.1)
+
+        # Add colorbar positioned at the bottom center
+        cb = fig.colorbar(line, ax=axes, orientation='horizontal',
+                          shrink=0.6, pad=0.15, aspect=25)
         cb.set_label('Time steps', fontsize=16)
         cb.ax.tick_params(labelsize=16)
-
-        plt.tight_layout()
 
         # Save the plot
         if not os.path.exists(folder_path + "plots/"):

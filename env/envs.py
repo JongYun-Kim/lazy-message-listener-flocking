@@ -1011,7 +1011,7 @@ class LazyMsgListenersTrainEnv(LazyMsgListenersEnv):
         return obs
 
 
-class ProposedFucking(LazyMsgListenersEnv):
+class ProposedFlocking(LazyMsgListenersEnv):
 
     def __init__(self, config):
         super().__init__(config=config)

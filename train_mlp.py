@@ -4,7 +4,7 @@ from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 
 from env.envs import LazyMsgListenersTrainEnv
-from model.lazy_listener import LazyListenerModelPPOTestMJ
+from model.lazy_listener_mlp import InfoLazyMLP
 
 if __name__ == "__main__":
 
@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     # register your custom model
     model_name = "lazy_listener_model_mlp"
-    ModelCatalog.register_custom_model(model_name, )
+    ModelCatalog.register_custom_model(model_name, InfoLazyMLP)
 
     # train
     tune.run(
